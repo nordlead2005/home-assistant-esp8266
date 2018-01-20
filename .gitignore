@@ -48,3 +48,8 @@ Temporary Items
 
 esp8266
 libraries
+
+.au
+.aup
+.FCStd*
+.stl

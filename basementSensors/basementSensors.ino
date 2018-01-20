@@ -43,8 +43,7 @@ char resetTopic[75] = "home/deviceName/reset";
 
 unsigned long lastAvailabliltySent = 0;
 
-//bool relayState[2] = { false, false };
-//bool lastSwitchState[2] = { false, false };
+float ultrasound_distance = 100.0;
 
 char buf[256];
 
@@ -196,7 +195,7 @@ bool saveConfig()
     JsonObject& json = jsonBuffer.createObject();
     json[JSON_MQTT_SERVER] = mqtt_server;
     json[JSON_DEVICE_NAME] = device_name;
-    json[JSON_ULTRASOUND_STATE] = ultrasoundState;
+    json[JSON_ULTRASOUND_STATE] = ultrasound_state;
 
     File configFile = SPIFFS.open(JSON_FILE, "w");
     if (!configFile) {
@@ -277,6 +276,15 @@ void reportTopic(const char* topic, int payload)
   logger(buf);
 }
 
+void reportTopic(const char* topic, float payload)
+{
+  char tmp[20];
+  ftoa(tmp, payload, 2);
+  mqttClient.publish(topic, tmp);
+  sprintf(buf, "%s: %s\r\n", topic, tmp);
+  logger(buf);
+}
+
 void loop() {
   // put your main code here, to run repeatedly:
   if(WiFi.status() == WL_CONNECTED)
@@ -286,59 +294,22 @@ void loop() {
     checkServer();  
   }
 
-  for(int i = 0; i < GANG_COUNT; ++i)
-  {
-    if(TOGGLE[i])
-    {
-      checkToggle(i);
-    }
-    else
-    {
-      checkPushButton(i);
-    }
-  }
-  delay(50);
+
+  long duration;
+  digitalWrite(PIN_ULTRASOUND_TRIGGER, LOW);  
+  delayMicroseconds(2); 
+  
+  digitalWrite(PIN_ULTRASOUND_TRIGGER, HIGH);
+  delayMicroseconds(10); 
+  
+  digitalWrite(PIN_ULTRASOUND_TRIGGER, LOW);
+  duration = pulseIn(PIN_ULTRASOUND_ECHO, HIGH);
+  ultrasound_distance = duration / 148.0;
+  reportTopic(ultrasound_state, ultrasound_distance);
+  
+  delay(1000);
   ArduinoOTA.handle();
 }
-
-void checkToggle(int channel)
-{
-  bool toggleState = digitalRead(PIN_SWITCH[channel]);
-//  sprintf(buf, "Channel %d\tswitch: %d\tPrevious %d\tPin: %d\r\n", channel, toggleState, lastSwitchState[channel], PIN_SWITCH[channel]);
-//  logger(buf);
-  if(toggleState != lastSwitchState[channel])
-  {
-    lastSwitchState[channel] = toggleState;
-    setRelay(!relayState[channel], channel);
-  }
-}
-
-void checkPushButton(int channel)
-{
-  bool switchState = digitalRead(PIN_SWITCH[channel]);
-  delayMicroseconds(500);
-  bool switchState2 = digitalRead(PIN_SWITCH[channel]);
-  if(switchState == switchState2)
-  {
-//    sprintf(buf, "Channel %d: switch %d, previous %d\r\n", channel, switchState, lastSwitchState[channel]);
-//    logger(buf);
-    if(switchState == false && lastSwitchState[channel] == true)
-    {
-      setRelay(!relayState[channel], channel);
-    }
-    lastSwitchState[channel] = switchState;
-  }
-}
-
-
-//void setRelay(bool state, int channel)
-//{
-//  sprintf(buf, "Set Channel: %d\tPin: %d\tState: %d\r\n", channel, PIN_RELAY[channel], state);
-//  logger(buf);
-//  relayState[channel] = state;
-//  digitalWrite(PIN_RELAY[channel], state);
-//  reportTopic(switchStates[channel], (state) ? STATE_ON : STATE_OFF);
-//}
 
 void callback(char* topic, byte* payload, unsigned int length)
 {
@@ -352,16 +323,20 @@ void callback(char* topic, byte* payload, unsigned int length)
   }
   else
   {
-    int channel = (strncmp(topic, switchCommands[0], strlen(switchCommands[0])) == 0) ? 0 : 1;
-    
-    if ((char)payload[1] == 'N') //on
-    {
-      setRelay(true, channel);
-    }
-    else if((char)payload[1] == 'F') //close
-    {
-      setRelay(false, channel);
-    }
+
   }
 }
 
+char *ftoa(char *a, double f, int precision)
+{
+ long p[] = {0,10,100,1000,10000,100000,1000000,10000000,100000000};
+ 
+ char *ret = a;
+ long heiltal = (long)f;
+ itoa(heiltal, a, 10);
+ while (*a != '\0') a++;
+ *a++ = '.';
+ long desimal = abs((long)((f - heiltal) * p[precision]));
+ itoa(desimal, a, 10);
+ return ret;
+}
